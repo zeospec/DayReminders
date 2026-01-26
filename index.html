@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Day Reminders - Never Miss a Celebration</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="alternate icon" href="favicon.ico">
+    
+    <!-- Fonts and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#f48525",
+                        "primary-hover": "#d66e15",
+                        "primary-dark": "#d66e14",
+                        "background-light": "#f8f7f5",
+                        "background-dark": "#221810",
+                        "surface-light": "#ffffff",
+                        "surface-dark": "#2C2018",
+                        "card-light": "#ffffff",
+                        "card-dark": "#2d241c",
+                        "input-light": "#ffffff",
+                        "input-dark": "#1a120b",
+                        "border-light": "#e6e0db",
+                        "border-dark": "#4a3b32",
+                        "text-main": "#181411",
+                        "text-muted": "#8a7460",
+                        "brand-teal": "#2E8B57",
+                    },
+                    fontFamily: {
+                        "display": ["Plus Jakarta Sans", "sans-serif"],
+                        "sans": ["Plus Jakarta Sans", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "2xl": "2rem"},
+                    boxShadow: {
+                        'glow': '0 0 20px -5px rgba(244, 133, 37, 0.3)',
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <link rel="stylesheet" href="style.css">
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Firebase will be initialized in auth.js
+        // SDK is loaded via ES modules in auth.js
+    </script>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display antialiased min-h-screen">
+    <!-- Header -->
+    <header class="sticky top-0 z-40 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-[#f5f2f0] dark:border-neutral-800 px-3 sm:px-6 py-2.5 sm:py-4 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1">
+            <div class="size-6 sm:size-8 rounded-lg bg-primary flex items-center justify-center text-white shadow-lg shadow-primary/30 flex-shrink-0">
+                <span class="material-symbols-outlined text-base sm:text-xl">calendar_month</span>
+            </div>
+            <h1 class="text-base sm:text-xl font-bold tracking-tight text-text-main dark:text-white whitespace-nowrap overflow-hidden text-ellipsis">Day Reminders</h1>
+        </div>
+        <div class="flex items-center gap-1.5 sm:gap-3 flex-shrink-0">
+            <!-- User Info - Show on larger screens, hide on mobile to save space -->
+            <div id="userInfo" class="hidden sm:flex items-center gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-white dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700">
+                <span id="userEmail" class="text-xs sm:text-sm text-text-main dark:text-white font-medium whitespace-nowrap"></span>
+            </div>
+            <!-- Sign Out Button -->
+            <button id="signOutBtn" class="hidden flex items-center justify-center size-8 sm:size-10 rounded-full bg-white dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-sm flex-shrink-0" title="Sign Out">
+                <span class="material-symbols-outlined text-text-main dark:text-white text-base sm:text-[20px]">logout</span>
+            </button>
+            <button id="darkModeToggle" class="flex items-center justify-center size-8 sm:size-10 rounded-full bg-white dark:bg-neutral-800 border border-neutral-100 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors shadow-sm flex-shrink-0">
+                <span class="material-symbols-outlined text-text-main dark:text-white text-base sm:text-[20px]">dark_mode</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 px-3 sm:px-6 py-4 sm:py-6 flex flex-col gap-5 sm:gap-8 pb-24 sm:pb-32 max-w-2xl mx-auto w-full">
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden flex flex-col items-center justify-center py-16 sm:py-20">
+            <div class="relative">
+                <div class="absolute inset-0 bg-primary/5 dark:bg-primary/10 rounded-full scale-90 blur-2xl"></div>
+                <div class="relative size-14 sm:size-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-primary text-3xl sm:text-4xl animate-spin">refresh</span>
+                </div>
+            </div>
+            <p class="text-text-muted dark:text-neutral-400 font-medium mt-5 sm:mt-6 text-sm sm:text-base">Loading contacts...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3 sm:p-4">
+            <div class="flex items-start gap-2 text-red-800 dark:text-red-300">
+                <span class="material-symbols-outlined text-lg sm:text-xl flex-shrink-0 mt-0.5">error</span>
+                <p id="errorMessage" class="font-medium text-sm sm:text-base flex-1">Failed to load contacts. Please try again.</p>
+            </div>
+            <button id="retryBtn" class="mt-3 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 underline font-semibold text-sm sm:text-base">Retry</button>
+        </div>
+
+        <!-- Empty State -->
+        <div id="emptyState" class="hidden flex flex-col items-center justify-center flex-1 py-8 sm:py-10 gap-6 sm:gap-8">
+            <div class="relative flex flex-col items-center justify-center p-6 sm:p-8">
+                <div class="absolute inset-0 bg-primary/5 dark:bg-primary/10 rounded-full scale-90 blur-2xl"></div>
+                <div class="relative size-48 sm:size-64 rounded-full bg-primary/5 dark:bg-primary/10 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-primary text-6xl sm:text-8xl opacity-50">calendar_month</span>
+                </div>
+            </div>
+            <div class="flex flex-col items-center gap-2 sm:gap-3 text-center px-4">
+                <h1 class="text-text-main dark:text-white text-xl sm:text-2xl md:text-3xl font-bold leading-tight">No special days yet</h1>
+                <p class="text-text-muted dark:text-neutral-400 text-sm sm:text-base font-normal max-w-[320px]">Start adding your friends and family to never miss a celebration.</p>
+            </div>
+            <div class="flex flex-col items-center gap-4 w-full px-4">
+                <button id="addFirstBtn" class="flex w-full max-w-[320px] cursor-pointer items-center justify-center rounded-xl h-11 sm:h-12 px-5 sm:px-6 bg-primary hover:bg-primary-hover text-white text-sm sm:text-base font-bold shadow-lg shadow-primary/20 transition-all gap-2">
+                    <span class="material-symbols-outlined text-lg sm:text-[20px]">add_circle</span>
+                    <span>Add Your First Contact</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Contacts List Container -->
+        <div id="contactsListContainer" class="hidden">
+            <div class="flex flex-col gap-1 mb-4 sm:mb-6">
+                <h2 class="text-xl sm:text-3xl font-bold text-text-main dark:text-white leading-tight break-words" id="greetingText">Upcoming Events</h2>
+                <p class="text-sm sm:text-base text-text-muted dark:text-neutral-400 font-medium break-words" id="eventsCount">You have upcoming events.</p>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="mb-4 sm:mb-6">
+                <div class="relative">
+                    <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                        <span class="material-symbols-outlined text-lg sm:text-xl">search</span>
+                    </span>
+                    <input type="text" 
+                           id="searchInput" 
+                           placeholder="Search by name or reference..." 
+                           class="w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-11 sm:h-12 pl-10 sm:pl-12 pr-10 sm:pr-4 text-sm sm:text-base text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all font-medium"/>
+                    <button id="clearSearch" class="hidden absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400 hover:text-text-main dark:hover:text-white transition-colors">
+                        <span class="material-symbols-outlined text-lg">close</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Filter Buttons -->
+            <div class="flex gap-2 sm:gap-3 overflow-x-auto no-scrollbar pb-2 -mx-4 sm:-mx-6 px-4 sm:px-6 mb-4 sm:mb-6">
+                <button id="filterAll" class="filter-btn active flex h-9 sm:h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-primary text-white px-4 sm:px-5 shadow-lg shadow-primary/20 transition-transform active:scale-95">
+                    <span class="text-xs sm:text-sm font-semibold">All</span>
+                </button>
+                <button id="filterBirthday" class="filter-btn flex h-9 sm:h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-card-dark border border-neutral-200 dark:border-neutral-700 px-4 sm:px-5 text-text-main dark:text-white transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    <span class="text-xs sm:text-sm font-semibold">Birthdays 🎂</span>
+                </button>
+                <button id="filterAnniversary" class="filter-btn flex h-9 sm:h-10 shrink-0 items-center justify-center gap-x-2 rounded-full bg-white dark:bg-card-dark border border-neutral-200 dark:border-neutral-700 px-4 sm:px-5 text-text-main dark:text-white transition-colors hover:bg-neutral-50 dark:hover:bg-neutral-800">
+                    <span class="text-xs sm:text-sm font-semibold">Anniversaries 💍</span>
+                </button>
+            </div>
+
+            <!-- Contacts List -->
+            <div class="flex flex-col gap-3 sm:gap-4">
+                <h3 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-text-muted dark:text-neutral-500 mb-1 sm:mb-2">Upcoming</h3>
+                <div id="contactsList" class="flex flex-col gap-3 sm:gap-4"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Floating Action Button -->
+    <button id="addBtn" class="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex items-center justify-center size-14 sm:size-16 rounded-xl sm:rounded-2xl bg-primary text-white shadow-xl shadow-primary/30 hover:bg-primary-dark active:scale-95 transition-all">
+        <span class="material-symbols-outlined text-3xl sm:text-4xl">add</span>
+    </button>
+    <div class="fixed bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-background-light dark:from-background-dark to-transparent pointer-events-none md:hidden"></div>
+
+    <!-- Add Contact Modal -->
+    <div id="addModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/30 dark:bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-[480px] flex flex-col bg-surface-light dark:bg-surface-dark rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] overflow-y-auto transform transition-all">
+            <div class="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-4 sm:py-5 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur-md border-b border-border-light/50 dark:border-border-dark/50">
+                <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-text-main dark:text-white">Add New Contact</h3>
+                <button id="closeModalBtn" class="group flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-background-light dark:hover:bg-white/10 transition-colors">
+                    <span class="material-symbols-outlined text-text-main dark:text-white group-hover:scale-110 transition-transform text-lg sm:text-xl">close</span>
+                </button>
+            </div>
+            
+            <form id="addContactForm" class="p-4 sm:p-6 space-y-5 sm:space-y-6">
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Name <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">person</span>
+                        </span>
+                        <input type="text" id="name" name="name" required
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium" 
+                               placeholder="e.g., Jane Doe"/>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Event Type <span class="text-red-500">*</span></label>
+                    <input type="text" id="type" name="type" list="typeOptions" required
+                           placeholder="Enter type (e.g., Birthday, Anniversary, or custom)"
+                           class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-4 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    <datalist id="typeOptions">
+                        <option value="Birthday">Birthday</option>
+                        <option value="Anniversary">Anniversary</option>
+                    </datalist>
+                    <p class="text-xs text-text-muted dark:text-gray-500 mt-1 ml-1">Select from suggestions or type your own custom type</p>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Date <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">calendar_month</span>
+                        </span>
+                        <input type="date" id="date" name="date" required
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium shadow-sm cursor-pointer"/>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <div class="flex justify-between items-baseline px-1">
+                        <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider">Phone Number</label>
+                        <span class="text-xs font-medium text-text-muted dark:text-gray-500 italic">Optional</span>
+                    </div>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">call</span>
+                        </span>
+                        <input type="tel" id="phone" name="phone"
+                               placeholder="919876543210"
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    </div>
+                    <p class="text-xs text-text-muted dark:text-gray-500 mt-1 ml-1">International format without + (e.g., 919876543210)</p>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Reference Note</label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">note</span>
+                        </span>
+                        <input type="text" id="reference" name="reference"
+                               placeholder="e.g., Met at Gym, John's Wife"
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    </div>
+                </div>
+
+                <div id="formError" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+                    <p id="formErrorMessage" class="text-xs sm:text-sm text-red-800 dark:text-red-300 font-medium"></p>
+                </div>
+
+                <button type="submit" id="submitBtn" class="relative w-full h-12 sm:h-14 rounded-xl bg-primary hover:bg-primary-hover active:scale-[0.98] transition-all text-white text-base sm:text-lg font-bold shadow-lg shadow-primary/30 flex items-center justify-center gap-3 overflow-hidden group">
+                    <span class="material-symbols-outlined font-bold text-lg sm:text-xl">check_circle</span>
+                    <span>Save Reminder</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Edit Contact Modal -->
+    <div id="editModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/30 dark:bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-[480px] flex flex-col bg-surface-light dark:bg-surface-dark rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] overflow-y-auto transform transition-all">
+            <div class="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-6 py-4 sm:py-5 bg-surface-light/95 dark:bg-surface-dark/95 backdrop-blur-md border-b border-border-light/50 dark:border-border-dark/50">
+                <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-text-main dark:text-white">Edit Contact</h3>
+                <button id="closeEditModalBtn" class="group flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-full hover:bg-background-light dark:hover:bg-white/10 transition-colors">
+                    <span class="material-symbols-outlined text-text-main dark:text-white group-hover:scale-110 transition-transform text-lg sm:text-xl">close</span>
+                </button>
+            </div>
+            
+            <form id="editContactForm" class="p-4 sm:p-6 space-y-5 sm:space-y-6">
+                <input type="hidden" id="editContactId" name="id">
+                
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Name <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">person</span>
+                        </span>
+                        <input type="text" id="editName" name="name" required
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium" 
+                               placeholder="e.g., Jane Doe"/>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Event Type <span class="text-red-500">*</span></label>
+                    <input type="text" id="editType" name="type" list="editTypeOptions" required
+                           placeholder="Enter type (e.g., Birthday, Anniversary, or custom)"
+                           class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-4 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    <datalist id="editTypeOptions">
+                        <option value="Birthday">Birthday</option>
+                        <option value="Anniversary">Anniversary</option>
+                    </datalist>
+                    <p class="text-xs text-text-muted dark:text-gray-500 mt-1 ml-1">Select from suggestions or type your own custom type</p>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Date <span class="text-red-500">*</span></label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">calendar_month</span>
+                        </span>
+                        <input type="date" id="editDate" name="date" required
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium shadow-sm cursor-pointer"/>
+                    </div>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <div class="flex justify-between items-baseline px-1">
+                        <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider">Phone Number</label>
+                        <span class="text-xs font-medium text-text-muted dark:text-gray-500 italic">Optional</span>
+                    </div>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">call</span>
+                        </span>
+                        <input type="tel" id="editPhone" name="phone"
+                               placeholder="919876543210"
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    </div>
+                    <p class="text-xs text-text-muted dark:text-gray-500 mt-1 ml-1">International format without + (e.g., 919876543210)</p>
+                </div>
+
+                <div class="flex flex-col gap-2 group/field">
+                    <label class="text-text-main dark:text-gray-200 text-xs sm:text-sm font-semibold uppercase tracking-wider ml-1">Reference Note</label>
+                    <div class="relative">
+                        <span class="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-text-muted dark:text-gray-400">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">note</span>
+                        </span>
+                        <input type="text" id="editReference" name="reference"
+                               placeholder="e.g., Met at Gym, John's Wife"
+                               class="form-input w-full rounded-xl border-2 border-border-light dark:border-border-dark bg-input-light dark:bg-input-dark h-12 sm:h-14 pl-10 sm:pl-12 pr-4 text-text-main dark:text-white placeholder:text-text-muted/70 focus:border-primary focus:ring-0 focus:outline-none transition-all text-base sm:text-lg font-medium"/>
+                    </div>
+                </div>
+
+                <div id="editFormError" class="hidden bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl p-3">
+                    <p id="editFormErrorMessage" class="text-xs sm:text-sm text-red-800 dark:text-red-300 font-medium"></p>
+                </div>
+
+                <button type="submit" id="editSubmitBtn" class="relative w-full h-12 sm:h-14 rounded-xl bg-primary hover:bg-primary-hover active:scale-[0.98] transition-all text-white text-base sm:text-lg font-bold shadow-lg shadow-primary/30 flex items-center justify-center gap-3 overflow-hidden group">
+                    <span class="material-symbols-outlined font-bold text-lg sm:text-xl">check_circle</span>
+                    <span>Update Contact</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/30 dark:bg-black/60 backdrop-blur-sm">
+        <div class="w-full max-w-[400px] flex flex-col bg-surface-light dark:bg-surface-dark rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden">
+            <div class="px-4 sm:px-6 py-4 sm:py-5 border-b border-border-light/50 dark:border-border-dark/50">
+                <h3 class="text-xl sm:text-2xl font-bold tracking-tight text-text-main dark:text-white">Delete Contact</h3>
+            </div>
+            
+            <div class="p-4 sm:p-6">
+                <p class="text-sm sm:text-base text-text-main dark:text-white mb-4">
+                    Are you sure you want to delete <span id="deleteContactName" class="font-bold"></span>? This action cannot be undone.
+                </p>
+                <input type="hidden" id="deleteContactId">
+                
+                <div class="flex gap-2 sm:gap-3">
+                    <button id="cancelDeleteBtn" class="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl border-2 border-border-light dark:border-border-dark bg-transparent text-text-main dark:text-white hover:bg-background-light dark:hover:bg-white/10 transition-colors font-semibold text-sm sm:text-base">
+                        Cancel
+                    </button>
+                    <button id="confirmDeleteBtn" class="flex-1 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl bg-red-600 hover:bg-red-700 text-white transition-colors font-semibold text-sm sm:text-base">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Toast -->
+    <div id="successToast" class="hidden fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 bg-brand-teal text-white px-4 sm:px-6 py-3 sm:py-4 rounded-xl shadow-xl z-50 flex items-center gap-2 sm:gap-3 max-w-[90%] sm:max-w-none">
+        <span class="material-symbols-outlined text-lg sm:text-xl flex-shrink-0">check_circle</span>
+        <span class="font-semibold text-sm sm:text-base" id="successToastMessage">Contact added successfully!</span>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
