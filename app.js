@@ -1,6 +1,6 @@
 // Day Reminders - Main Application Logic
 import { API_URL } from './config.js';
-import { initAuth, getCurrentUser, getAuthToken, signOut, onAuthStateChanged } from './auth.js';
+import { initAuth, getCurrentUser, getAuthToken, signOut, onAuthStateChanged, signInWithGoogle } from './auth.js';
 
 // Application state
 let contacts = [];
@@ -9,6 +9,11 @@ let searchQuery = ''; // Current search query
 let currentUser = null; // Current authenticated user
 
 // DOM Elements
+const loginScreen = document.getElementById('loginScreen');
+const mainApp = document.getElementById('mainApp');
+const googleSignInBtn = document.getElementById('googleSignInBtn');
+const loginError = document.getElementById('loginError');
+const loginErrorMessage = document.getElementById('loginErrorMessage');
 const contactsList = document.getElementById('contactsList');
 const contactsListContainer = document.getElementById('contactsListContainer');
 const loadingState = document.getElementById('loadingState');
@@ -64,57 +69,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize authentication
     // Firebase's onAuthStateChanged fires immediately with current state
-    // We need to handle the initial state properly, especially after redirects
-    let authStateResolved = false;
-    let initialAuthCheckDone = false;
-    
     try {
         initAuth((user) => {
             currentUser = user;
-            
-            // Only handle auth state after initial check is complete
-            if (!authStateResolved) {
-                authStateResolved = true;
-                
-                // Check if we're coming from a login redirect
-                const fromLogin = sessionStorage.getItem('fromLogin') === 'true';
-                const waitTime = fromLogin ? 500 : 200; // Wait longer if coming from login
-
-                // Longer delay to ensure Firebase has time to restore auth state from persistence
-                // This is critical after a page redirect
-                setTimeout(() => {
-                    // Check auth state again after delay - Firebase might have restored it
-                    const currentUserAfterWait = getCurrentUser();
-                    
-                    // Use the user from the callback, but if it's null, check again
-                    const userToHandle = currentUserAfterWait || user;
-                    
-                    if (!initialAuthCheckDone) {
-                        initialAuthCheckDone = true;
-                        
-                        // If user is still null but we came from login, wait a bit more
-                        if (!userToHandle) {
-                            const fromLogin = sessionStorage.getItem('fromLogin') === 'true';
-                            if (fromLogin) {
-                                setTimeout(() => {
-                                    const finalUser = getCurrentUser();
-                                    handleAuthState(finalUser || userToHandle);
-                                }, 500);
-                                return;
-                            }
-                        }
-                        
-                        handleAuthState(userToHandle);
-                    }
-                }, waitTime);
-            } else {
-                // Subsequent auth state changes (like sign out)
-                handleAuthState(user);
-            }
+            handleAuthState(user);
         });
     } catch (error) {
         console.error('Error initializing auth:', error);
         showError('Failed to initialize authentication. Please refresh the page.');
+    }
+    
+    // Set up Google sign-in button
+    if (googleSignInBtn) {
+        googleSignInBtn.addEventListener('click', handleGoogleSignIn);
     }
 });
 
@@ -122,16 +89,13 @@ document.addEventListener('DOMContentLoaded', () => {
  * Handle authentication state changes
  */
 function handleAuthState(user) {
-    
     if (user) {
         // User is authenticated
-        
-        // Mark that we've successfully authenticated - prevent redirects
         userAuthenticated = true;
         
-        // Clear the fromLogin flag since we're successfully authenticated
-        sessionStorage.removeItem('fromLogin');
-        sessionStorage.removeItem('loginTime');
+        // Hide login screen, show main app
+        if (loginScreen) loginScreen.classList.add('hidden');
+        if (mainApp) mainApp.classList.remove('hidden');
         
         // Only set up event listeners once
         if (!eventListenersSetup) {
@@ -140,7 +104,6 @@ function handleAuthState(user) {
                 eventListenersSetup = true;
             } catch (error) {
                 console.error('Error setting up event listeners:', error);
-                // Continue anyway - listeners might already be set up
             }
         }
         
@@ -149,92 +112,67 @@ function handleAuthState(user) {
         updateUserUI(user);
     } else {
         // User is not authenticated
+        userAuthenticated = false;
         
-        // IMPORTANT: If we've already successfully authenticated, don't redirect
-        // This prevents redirect loops when onAuthStateChanged fires multiple times
-        if (userAuthenticated) {
-            
-            // Double-check by getting current user directly
-            const directCheck = getCurrentUser();
-            if (directCheck) {
-                // User is actually authenticated, update state
-                userAuthenticated = true;
-                handleAuthState(directCheck);
-                return;
-            } else {
-                userAuthenticated = false;
-            }
+        // Show login screen, hide main app
+        if (loginScreen) loginScreen.classList.remove('hidden');
+        if (mainApp) mainApp.classList.add('hidden');
+    }
+}
+
+/**
+ * Handle Google sign-in button click
+ */
+async function handleGoogleSignIn() {
+    if (!googleSignInBtn) return;
+    
+    try {
+        // Hide any previous errors
+        if (loginError) loginError.classList.add('hidden');
+        
+        // Disable button during sign in
+        googleSignInBtn.disabled = true;
+        const originalContent = googleSignInBtn.innerHTML;
+        googleSignInBtn.innerHTML = `
+            <span class="material-symbols-outlined animate-spin">refresh</span>
+            <span>Signing in...</span>
+        `;
+        
+        // Sign in with Google
+        const user = await signInWithGoogle();
+        
+        // Verify the user is actually set in auth
+        const verifyUser = getCurrentUser();
+        if (!verifyUser) {
+            throw new Error('Authentication failed - user not set');
         }
         
-        // Check if we just came from login (might be a timing issue)
-        const fromLogin = sessionStorage.getItem('fromLogin') === 'true';
-        const loginTime = sessionStorage.getItem('loginTime');
+        // Auth state will be updated by onAuthStateChanged callback
+        // No need to manually redirect or update UI here
         
-        if (fromLogin && loginTime) {
-            const timeSinceLogin = Date.now() - parseInt(loginTime);
-            
-            // If it's been less than 5 seconds since login, wait longer for Firebase to restore
-            if (timeSinceLogin < 5000) {
-                
-                // Try multiple times with increasing delays
-                let attempts = 0;
-                const maxAttempts = 4;
-                const checkAuth = () => {
-                    attempts++;
-                    const userAfterWait = getCurrentUser();
-                    
-                    if (userAfterWait) {
-                        // User is actually authenticated, handle it
-                        userAuthenticated = true;
-                        sessionStorage.removeItem('fromLogin');
-                        sessionStorage.removeItem('loginTime');
-                        handleAuthState(userAfterWait);
-                    } else if (attempts < maxAttempts) {
-                        // Try again with increasing delay
-                        setTimeout(checkAuth, 500 * attempts);
-                    } else {
-                        // Really not authenticated after all attempts
-                        userAuthenticated = false;
-                        sessionStorage.removeItem('fromLogin');
-                        sessionStorage.removeItem('loginTime');
-                        redirectToLogin();
-                    }
-                };
-                
-                // Start checking after initial delay
-                setTimeout(checkAuth, 300);
-                return; // Don't redirect immediately
-            } else {
-                // Too much time has passed, clear the flag
-                userAuthenticated = false;
-                sessionStorage.removeItem('fromLogin');
-                sessionStorage.removeItem('loginTime');
-            }
+    } catch (error) {
+        console.error('Sign in error:', error);
+        
+        // Show error message
+        if (loginErrorMessage) {
+            loginErrorMessage.textContent = error.message || 'Failed to sign in. Please try again.';
+        }
+        if (loginError) {
+            loginError.classList.remove('hidden');
         }
         
-        // Only redirect if not already on login page AND we haven't been authenticated
-        if (!userAuthenticated) {
-            const currentPath = window.location.pathname;
-            const currentUrl = window.location.href;
-            
-            // Treat ONLY explicit /login or /login.html routes as the login page.
-            // Do NOT treat the root path ("/") or other routes as login.
-            const isLoginPath =
-                currentPath.endsWith('/login') ||
-                currentPath.endsWith('/login.html');
-            
-            const isLoginUrl =
-                currentUrl.includes('/login?') ||
-                currentUrl.endsWith('/login') ||
-                currentUrl.endsWith('/login.html');
-            
-            const isLoginPage = isLoginPath || isLoginUrl;
-            
-            if (!isLoginPage) {
-                redirectToLogin();
-            } else {
-            }
-        } else {
+        // Re-enable button
+        if (googleSignInBtn) {
+            googleSignInBtn.disabled = false;
+            googleSignInBtn.innerHTML = `
+                <svg class="w-6 h-6" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                <span>Continue with Google</span>
+            `;
         }
     }
 }
@@ -1179,61 +1117,66 @@ function renderList(allContacts) {
                 const dayNum = dateParts[0];
                 const monthAbbr = dateParts[1];
                 
+                // Mobile-optimized layout: Date on left, content on right, actions at bottom
+                // Desktop: Date on left, content in middle, actions on right
                 return `
-            <article class="group relative flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 bg-white dark:bg-card-dark p-3 sm:p-4 rounded-xl sm:rounded-2xl shadow-sm border border-neutral-100 dark:border-neutral-800 hover:shadow-md transition-all hover:border-primary/20 dark:hover:border-primary/20">
-                <!-- Date Badge -->
-                <div class="flex flex-col items-center justify-center size-12 sm:size-16 shrink-0 rounded-lg sm:rounded-xl ${dateBadgeBg} border self-start sm:self-center">
-                    <span class="text-[9px] sm:text-xs font-bold uppercase tracking-wide ${isUrgent ? '' : 'opacity-60'}">${monthAbbr}</span>
-                    <span class="text-lg sm:text-2xl font-bold leading-none">${dayNum}</span>
-                </div>
-                
-                <!-- Contact Info - Takes remaining space -->
-                <div class="flex flex-col flex-1 min-w-0 gap-1.5">
-                    <h4 class="text-base sm:text-lg font-bold text-text-main dark:text-white break-words leading-tight">${escapeHtml(contact.name)}</h4>
-                    <div class="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm text-text-muted dark:text-neutral-400 flex-wrap">
-                        <span class="flex items-center gap-1 font-medium text-text-main dark:text-neutral-300 whitespace-nowrap">
-                            ${contact.type.toLowerCase() === 'birthday' ? '🎂' : contact.type.toLowerCase() === 'anniversary' ? '💍' : '📅'} ${escapeHtml(contact.type)}
-                        </span>
-                        <span class="size-1 rounded-full bg-neutral-300 dark:bg-neutral-600 shrink-0"></span>
-                        <span class="font-bold ${daysColor} whitespace-nowrap">${daysText}</span>
+            <article class="group relative flex flex-col sm:flex-row sm:items-center gap-3 bg-white dark:bg-card-dark p-3 sm:p-4 rounded-xl shadow-sm border border-neutral-100 dark:border-neutral-800 hover:shadow-md transition-all hover:border-primary/20 dark:hover:border-primary/20">
+                <!-- Mobile Layout: Date + Content Row -->
+                <div class="flex items-start gap-3 flex-1 min-w-0 sm:flex-1">
+                    <!-- Date Badge - Orange pill shape for mobile, compact for desktop -->
+                    <div class="flex flex-col items-center justify-center shrink-0 rounded-lg ${isUrgent ? 'bg-primary/10 sm:bg-primary/10' : 'bg-orange-50 dark:bg-orange-900/10 sm:bg-neutral-100 dark:sm:bg-neutral-800'} ${isUrgent ? 'border border-primary/30' : 'border border-orange-100 dark:border-orange-900/20 sm:border-neutral-200 dark:sm:border-neutral-700'} w-14 h-14 sm:w-16 sm:h-16">
+                        <span class="text-[10px] sm:text-xs font-bold uppercase tracking-wide ${isUrgent ? 'text-primary' : 'text-text-muted dark:text-neutral-500'}">${monthAbbr}</span>
+                        <span class="text-xl sm:text-2xl font-bold leading-none ${isUrgent ? 'text-primary' : 'text-text-main dark:text-white'}">${dayNum}</span>
                     </div>
-                    ${contact.reference ? `
-                        <p class="text-xs sm:text-sm text-text-muted dark:text-neutral-500 break-words leading-relaxed mt-0.5">
-                            ${escapeHtml(contact.reference)}
-                        </p>
-                    ` : ''}
+                    
+                    <!-- Contact Info - Takes remaining space -->
+                    <div class="flex flex-col flex-1 min-w-0 gap-1.5 sm:gap-2">
+                        <h4 class="text-base sm:text-lg font-bold text-text-main dark:text-white break-words leading-tight">${escapeHtml(contact.name)}</h4>
+                        <div class="flex items-center gap-1.5 text-xs sm:text-sm flex-wrap">
+                            <span class="flex items-center gap-1 font-medium text-text-main dark:text-neutral-300">
+                                ${contact.type.toLowerCase() === 'birthday' ? '🎂' : contact.type.toLowerCase() === 'anniversary' ? '💍' : '📅'} ${escapeHtml(contact.type)}
+                            </span>
+                            <span class="size-1 rounded-full bg-neutral-300 dark:bg-neutral-600 shrink-0"></span>
+                            <span class="font-bold ${daysColor}">${daysText}</span>
+                        </div>
+                        ${contact.reference ? `
+                            <p class="text-xs sm:text-sm text-text-muted dark:text-neutral-500 break-words leading-relaxed">
+                                ${escapeHtml(contact.reference)}
+                            </p>
+                        ` : ''}
+                    </div>
                 </div>
                 
-                <!-- Action Buttons - Horizontal row on all screens -->
-                <div class="flex items-center gap-2 sm:gap-2 shrink-0 sm:flex-col sm:items-stretch sm:gap-1.5">
+                <!-- Action Buttons - Bottom on mobile (centered), Right on desktop -->
+                <div class="flex items-center justify-center sm:justify-end gap-2 shrink-0 sm:flex-col sm:items-stretch sm:gap-1.5 sm:ml-2">
                     <!-- WhatsApp Button -->
                     ${hasPhone ? `
                         <a href="${whatsappLink}" 
                            target="_blank" 
                            rel="noopener noreferrer"
-                           class="flex items-center justify-center size-10 sm:size-12 rounded-full bg-[#E5F7EB] text-brand-teal hover:bg-[#d1f0da] dark:bg-brand-teal/20 dark:text-[#4ade80] transition-colors"
+                           class="flex items-center justify-center size-10 sm:size-11 rounded-full bg-[#E5F7EB] text-brand-teal hover:bg-[#d1f0da] active:scale-95 dark:bg-brand-teal/20 dark:text-[#4ade80] transition-all shadow-sm"
                            title="Send WhatsApp message">
-                            <span class="material-symbols-outlined text-[20px] sm:text-[26px]">chat</span>
+                            <span class="material-symbols-outlined text-lg sm:text-xl">chat</span>
                         </a>
                     ` : `
-                        <button class="flex items-center justify-center size-10 sm:size-12 rounded-full bg-neutral-50 text-neutral-400 border border-neutral-100 hover:bg-neutral-100 hover:text-brand-teal dark:bg-neutral-800 dark:border-neutral-700 transition-colors" disabled title="No phone number">
-                            <span class="material-symbols-outlined text-[20px] sm:text-[26px]">chat</span>
+                        <button class="flex items-center justify-center size-10 sm:size-11 rounded-full bg-neutral-50 text-neutral-400 border border-neutral-100 hover:bg-neutral-100 dark:bg-neutral-800 dark:border-neutral-700 transition-colors cursor-not-allowed" disabled title="No phone number">
+                            <span class="material-symbols-outlined text-lg sm:text-xl">chat</span>
                         </button>
                     `}
                     
                     <!-- Edit Button -->
                     <button data-edit-id="${escapeHtml(contact.id)}" 
-                            class="edit-contact-btn flex items-center justify-center size-10 sm:size-12 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 transition-colors"
+                            class="edit-contact-btn flex items-center justify-center size-10 sm:size-11 rounded-full bg-blue-50 text-blue-600 hover:bg-blue-100 active:scale-95 dark:bg-blue-900/20 dark:text-blue-400 transition-all shadow-sm"
                             title="Edit contact">
-                        <span class="material-symbols-outlined text-[20px] sm:text-[26px]">edit</span>
+                        <span class="material-symbols-outlined text-lg sm:text-xl">edit</span>
                     </button>
                     
                     <!-- Delete Button -->
                     <button data-delete-id="${escapeHtml(contact.id)}" 
                             data-delete-name="${escapeHtml(contact.name)}"
-                            class="delete-contact-btn flex items-center justify-center size-10 sm:size-12 rounded-full bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 transition-colors"
+                            class="delete-contact-btn flex items-center justify-center size-10 sm:size-11 rounded-full bg-red-50 text-red-600 hover:bg-red-100 active:scale-95 dark:bg-red-900/20 dark:text-red-400 transition-all shadow-sm"
                             title="Delete contact">
-                        <span class="material-symbols-outlined text-[20px] sm:text-[26px]">delete</span>
+                        <span class="material-symbols-outlined text-lg sm:text-xl">delete</span>
                     </button>
                 </div>
             </article>
@@ -1903,29 +1846,8 @@ async function deleteContact(contactId) {
  * Show main application (hide login, show app)
  */
 function showMainApp() {
-    // Main app is already visible, just ensure login elements are hidden
-    document.body.style.display = 'block';
-}
-
-/**
- * Redirect to login page
- */
-function redirectToLogin() {
-    // Don't redirect if user was previously authenticated (prevents redirect loops)
-    if (userAuthenticated) {
-        return;
-    }
-    
-    // Only redirect if not already on login page
-    const currentPath = window.location.pathname;
-    const currentUrl = window.location.href;
-    
-    const isLoginPage = currentPath.includes('login.html') || 
-                       currentUrl.includes('login.html');
-    
-    if (!isLoginPage) {
-        window.location.href = 'login.html';
-    }
+    // Main app visibility is handled by handleAuthState
+    // This function is kept for compatibility but is now a no-op
 }
 
 /**
@@ -1946,8 +1868,7 @@ function updateUserUI(user) {
 async function handleSignOut() {
     try {
         await signOut();
-        // Redirect to login page
-        redirectToLogin();
+        // Auth state change will automatically show login screen via handleAuthState
     } catch (error) {
         console.error('Error signing out:', error);
         alert('Failed to sign out. Please try again.');
