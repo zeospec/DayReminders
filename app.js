@@ -1,6 +1,13 @@
 // Day Reminders - Main Application Logic
 import { API_URL } from './config.js';
 import { initAuth, getCurrentUser, getAuthToken, signOut, onAuthStateChanged, signInWithGoogle } from './auth.js';
+import { 
+    requestNotificationPermission, 
+    isNotificationEnabled, 
+    setNotificationPreference,
+    getNotificationPreference,
+    checkAndShowNotifications 
+} from './notifications.js';
 
 // Application state
 let contacts = [];
@@ -52,6 +59,7 @@ const successToastMessage = document.getElementById('successToastMessage');
 const userInfo = document.getElementById('userInfo');
 const userEmail = document.getElementById('userEmail');
 const signOutBtn = document.getElementById('signOutBtn');
+const notificationToggle = document.getElementById('notificationToggle');
 
 // Track if event listeners have been set up to avoid duplicate setup
 let eventListenersSetup = false;
@@ -110,6 +118,18 @@ function handleAuthState(user) {
         showMainApp();
         loadContacts();
         updateUserUI(user);
+        
+        // Request notification permission on first load (if not already granted)
+        if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+            // Don't auto-request, let user enable via button
+            // But we can show a subtle hint after a delay
+            setTimeout(() => {
+                if (getNotificationPreference() && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+                    // User preference is enabled but permission not granted yet
+                    // This will be handled when they click the notification button
+                }
+            }, 3000);
+        }
     } else {
         // User is not authenticated
         userAuthenticated = false;
@@ -189,6 +209,12 @@ function setupEventListeners() {
     // Dark mode toggle
     if (darkModeToggle) {
         darkModeToggle.addEventListener('click', toggleDarkMode);
+    }
+    
+    // Notification toggle
+    if (notificationToggle) {
+        notificationToggle.addEventListener('click', handleNotificationToggle);
+        updateNotificationIcon();
     }
     
     // Sign out button
@@ -643,6 +669,14 @@ async function loadContacts() {
         
         // Always render list (it will handle empty state internally)
         renderList(contacts);
+        
+        // Check and show notifications for today/tomorrow birthdays
+        if (isNotificationEnabled()) {
+            // Small delay to ensure UI is rendered first
+            setTimeout(() => {
+                checkAndShowNotifications(contacts);
+            }, 1000);
+        }
     } catch (error) {
         console.error('❌ Error in loadContacts:', {
             message: error.message,
@@ -934,6 +968,56 @@ function updateDarkModeIcon(isDark) {
         if (icon) {
             icon.textContent = isDark ? 'light_mode' : 'dark_mode';
         }
+    }
+}
+
+/**
+ * Handle notification toggle click
+ */
+async function handleNotificationToggle() {
+    const currentlyEnabled = getNotificationPreference();
+    
+    if (!currentlyEnabled) {
+        // User wants to enable notifications - request permission
+        const permissionGranted = await requestNotificationPermission();
+        
+        if (permissionGranted) {
+            setNotificationPreference(true);
+            updateNotificationIcon();
+            showSuccessToast('Notifications enabled! You\'ll be reminded of birthdays.');
+        } else {
+            // Permission denied
+            setNotificationPreference(false);
+            updateNotificationIcon();
+            alert('Notification permission is required to receive reminders. Please enable it in your browser settings.');
+        }
+    } else {
+        // User wants to disable notifications
+        setNotificationPreference(false);
+        updateNotificationIcon();
+        showSuccessToast('Notifications disabled');
+    }
+}
+
+/**
+ * Update notification icon based on current state
+ */
+function updateNotificationIcon() {
+    if (!notificationToggle) return;
+    
+    const icon = notificationToggle.querySelector('.material-symbols-outlined');
+    if (!icon) return;
+    
+    const enabled = isNotificationEnabled();
+    
+    if (enabled) {
+        icon.textContent = 'notifications';
+        icon.classList.remove('opacity-50');
+        notificationToggle.title = 'Notifications enabled - Click to disable';
+    } else {
+        icon.textContent = 'notifications_off';
+        icon.classList.add('opacity-50');
+        notificationToggle.title = 'Notifications disabled - Click to enable';
     }
 }
 
