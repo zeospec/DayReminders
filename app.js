@@ -11,7 +11,7 @@ import {
 
 // Application state
 let contacts = [];
-let currentFilter = 'all'; // 'all', 'birthday', 'anniversary'
+let currentFilter = 'all'; // 'all', 'birthday', 'anniversary', 'yesterday'
 let searchQuery = ''; // Current search query
 let currentUser = null; // Current authenticated user
 
@@ -42,6 +42,7 @@ const darkModeToggle = document.getElementById('darkModeToggle');
 const filterAll = document.getElementById('filterAll');
 const filterBirthday = document.getElementById('filterBirthday');
 const filterAnniversary = document.getElementById('filterAnniversary');
+const filterYesterday = document.getElementById('filterYesterday');
 const searchInput = document.getElementById('searchInput');
 const clearSearch = document.getElementById('clearSearch');
 const editModal = document.getElementById('editModal');
@@ -226,6 +227,7 @@ function setupEventListeners() {
     if (filterAll) filterAll.addEventListener('click', () => setFilter('all'));
     if (filterBirthday) filterBirthday.addEventListener('click', () => setFilter('birthday'));
     if (filterAnniversary) filterAnniversary.addEventListener('click', () => setFilter('anniversary'));
+    if (filterYesterday) filterYesterday.addEventListener('click', () => setFilter('yesterday'));
     
     // Search functionality
     if (searchInput) {
@@ -1028,13 +1030,14 @@ function setFilter(filter) {
     currentFilter = filter;
     
     // Update button states
-    [filterAll, filterBirthday, filterAnniversary].forEach(btn => {
+    [filterAll, filterBirthday, filterAnniversary, filterYesterday].forEach(btn => {
         if (btn) btn.classList.remove('active');
     });
     
     if (filter === 'all' && filterAll) filterAll.classList.add('active');
     if (filter === 'birthday' && filterBirthday) filterBirthday.classList.add('active');
     if (filter === 'anniversary' && filterAnniversary) filterAnniversary.classList.add('active');
+    if (filter === 'yesterday' && filterYesterday) filterYesterday.classList.add('active');
     
     // Re-render with filter (search is preserved)
     renderList(contacts);
@@ -1043,14 +1046,30 @@ function setFilter(filter) {
 /**
  * Filters contacts based on current filter and search query
  */
+/**
+ * Returns true if the contact's event date (month-day) falls on yesterday
+ */
+function isContactYesterday(contact) {
+    if (!contact.date) return false;
+    const parts = contact.date.split('-');
+    if (parts.length !== 3) return false;
+    const contactMonth = parseInt(parts[1], 10);
+    const contactDay = parseInt(parts[2], 10);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    return contactMonth === yesterday.getMonth() + 1 && contactDay === yesterday.getDate();
+}
+
 function getFilteredContacts(contacts) {
     let filtered = contacts;
     
-    // Apply type filter
+    // Apply type or date filter
     if (currentFilter === 'birthday') {
         filtered = filtered.filter(c => c.type.toLowerCase() === 'birthday');
     } else if (currentFilter === 'anniversary') {
         filtered = filtered.filter(c => c.type.toLowerCase() === 'anniversary');
+    } else if (currentFilter === 'yesterday') {
+        filtered = filtered.filter(isContactYesterday);
     }
     
     // Apply search filter
@@ -1123,6 +1142,14 @@ function updateGreeting(count) {
             } else {
                 eventsCount.textContent = `Found ${count} results for "${searchQuery}".`;
             }
+        } else if (currentFilter === 'yesterday') {
+            if (count === 0) {
+                eventsCount.textContent = 'No events yesterday.';
+            } else if (count === 1) {
+                eventsCount.textContent = '1 event was yesterday — catch up if you missed it.';
+            } else {
+                eventsCount.textContent = `${count} events were yesterday — catch up if you missed any.`;
+            }
         } else {
             if (count === 0) {
                 eventsCount.textContent = 'No upcoming events.';
@@ -1149,7 +1176,7 @@ function renderList(allContacts) {
         if (contactsListContainer) {
             contactsListContainer.classList.remove('hidden');
         }
-        let message = 'No contacts match the selected filter.';
+        let message = currentFilter === 'yesterday' ? 'No events yesterday.' : 'No contacts match the selected filter.';
         if (searchQuery.trim()) {
             message = `No contacts found matching "${searchQuery}".`;
         }
@@ -1173,6 +1200,12 @@ function renderList(allContacts) {
         contactsListContainer.classList.remove('hidden');
     }
     
+    // Update section title (Upcoming vs Yesterday)
+    const sectionTitleEl = document.getElementById('contactsListSectionTitle');
+    if (sectionTitleEl) {
+        sectionTitleEl.textContent = currentFilter === 'yesterday' ? 'Yesterday' : 'Upcoming';
+    }
+    
     // Update greeting and count
     updateGreeting(filteredContacts.length);
     
@@ -1187,13 +1220,16 @@ function renderList(allContacts) {
                 const dateBadge = formatDateBadge(contact.nextOccurrence);
                 const iconClass = getTypeIcon(contact.type);
                 const badgeColor = getTypeBadgeColor(contact.type);
-                const { text: daysText, color: daysColor } = getDaysRemainingText(contact.daysRemaining);
+                // For Yesterday filter, show "Yesterday" label; otherwise use days remaining
+                const isYesterdayView = currentFilter === 'yesterday';
+                const daysText = isYesterdayView ? 'Yesterday' : getDaysRemainingText(contact.daysRemaining).text;
+                const daysColor = isYesterdayView ? 'text-text-muted dark:text-neutral-400' : getDaysRemainingText(contact.daysRemaining).color;
                 const whatsappLink = generateWhatsAppLink(contact.phone, contact.type, contact.name);
                 // Safe check: phone is already normalized to string in processContacts
                 const hasPhone = contact.phone && String(contact.phone).trim() !== '';
                 
-                // Determine date badge styling based on urgency
-                const isUrgent = contact.daysRemaining <= 1;
+                // Determine date badge styling based on urgency (or yesterday view)
+                const isUrgent = !isYesterdayView && contact.daysRemaining <= 1;
                 const dateBadgeBg = isUrgent 
                     ? 'bg-orange-50 dark:bg-orange-900/20 text-primary border-orange-100 dark:border-orange-900/30' 
                     : 'bg-neutral-100 dark:bg-neutral-800 text-text-main dark:text-neutral-300';
